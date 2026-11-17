@@ -216,14 +216,27 @@ ramdisk_max_bytes = 199229440
 "roots" = ["com.apple.AppleFSCompression.AppleFSCompressionTypeZlib", "com.apple.driver.AppleARMPlatform", "com.apple.driver.AppleARMWatchdogTimer", "com.apple.driver.AppleAudioClockLibs", "com.apple.driver.AppleEffaceableStorage", "com.apple.driver.AppleIISController", "com.apple.driver.AppleM2ScalerCSCDriver", "com.apple.driver.AppleMobileFileIntegrity", "com.apple.driver.ApplePMGR", "com.apple.driver.IODARTFamily", "com.apple.filesystems.apfs", "com.apple.iokit.CoreAnalyticsFamily", "com.apple.iokit.IOAVFamily", "com.apple.iokit.IOAudio2Family", "com.apple.iokit.IOCECFamily", "com.apple.iokit.IOCryptoAcceleratorFamily", "com.apple.iokit.IOGPUFamily", "com.apple.iokit.IOHDCPFamily", "com.apple.iokit.IOMobileGraphicsFamily", "com.apple.iokit.IOReportFamily", "com.apple.iokit.IOSlowAdaptiveClockingFamily", "com.apple.iokit.IOStorageFamily", "com.apple.iokit.IOSurface", "com.apple.kec.Libm", "com.apple.kec.corecrypto", "com.apple.kext.AppleMatch", "com.apple.kext.CoreTrust", "com.apple.security.AppleImage4", "com.apple.security.sandbox", "com.apple.iokit.IOHIDFamily", "com.apple.iokit.IOHIDEventDriver", "com.apple.iokit.IOUSBDeviceFamily", "com.apple.driver.AppleUSBXDCI", "com.apple.driver.AppleUSBDeviceMux", "com.apple.iokit.IOUSBHostFamily", "com.apple.driver.usb.AppleUSBXHCI", "com.apple.driver.usb.AppleUSBHub", "com.apple.driver.usb.AppleUSBHostCompositeDevice", "com.apple.driver.usb.IOUSBHostHIDDevice", "com.apple.iokit.IOUSBMassStorageDriver", "com.apple.iokit.IOSCSIArchitectureModelFamily", "com.apple.iokit.IOSCSIBlockCommandsDevice", "!com.apple.driver.AppleOnboardSerial", "!com.apple.driver.AppleSMC"]
 
 ["os_overrides"."macos-27.3-26C5035r"."kernel"]
+# 12 GiB unit (local): the defconfig and the source storage step with the macOS policies are named here as well, as in the
+# table this branch restored (0ae7ceb), so the macOS kernel never takes the iPadOS root policies. component:ShengUfs builds
+# the same runtime with the policies it finds; the explicit step runs after it with scripts/policies/macos-27.3-26C5035r.
+"defconfig" = "sheng_macos_defconfig"
 "config_fragments" = ["arch:configs/common.config", "os:configs/macos.config"]
-"archives" = ["build-corecrypto-14.py", "build-corecrypto-14.py --namespace", "component:ArmDTPlatform", "component:ArmCpu", "build-libpthread-kernel.py", "component:ShengUfs", "component:RamBlock", "component:Adreno740", "fetch-sheng-dts.py", "fetch-adreno-inputs.py", "prepare-sheng-gmu.py", "prepare-sheng-gpu-smmu.py", "prepare-sheng-gmu-votes.py", "build-adreno740-kits.py", "build-adreno740-accelerator.py", "component:SoftwareAES", "component:AppleKeyStoreState", "build-gop-legacy-display-27.py"]
+"archives" = ["build-corecrypto-14.py", "build-corecrypto-14.py --namespace", "component:ArmDTPlatform", "component:ArmCpu", "build-libpthread-kernel.py", "component:ShengUfs", "build-sheng-source-storage.py --policy-dir scripts/policies/macos-27.3-26C5035r", "component:RamBlock", "component:Adreno740", "fetch-sheng-dts.py", "fetch-adreno-inputs.py", "prepare-sheng-gmu.py", "prepare-sheng-gpu-smmu.py", "prepare-sheng-gmu-votes.py", "build-adreno740-kits.py", "build-adreno740-accelerator.py", "component:AppleKeyStoreState", "component:SoftwareAES", "build-gop-legacy-display-27.py"]
 
 ["os_overrides"."macos-27.3-26C5035r"."payload"]
+# The menu counts down one second instead of waiting for a key.
+# 12 GiB unit (local): no Data initialization entry in test payloads (local-tools refuse any data-reset). The confirmed
+# "Initialize macOS Data and boot" entry of crossdarwin/boot/explicit-macos-data (UniXNU-sheng#102) stays defined below
+# (payload.install) but the remove list drops it for that reason; a payload meant for initializing Data takes
+# payload.install out of the remove list.
 "timeout" = 1
 # The macOS kernel collection (137 MiB), the Data seed (20 MiB) and the GPU addon (the Metal plugin and Turnip, zlib-compressed).
 # iPadOS 17 and 26 images boot on this device with 208 MiB.
-"size_mib" = 256
+# 12 GiB unit (local): the payload files take 180 MiB here (the community payload fits 187), and the test images
+# are RAM-booted, so the volume stays at the 200 MiB this branch used before the merge (upstream: 256). That is above the
+# 193 MiB the qualified transport (crossdarwin/boot/qualified-macos-transport, 187 MiB) leaves, so this payload goes into
+# this branch's v4 images (local-tools/make-bootimg-v4.py), not the qualified v0 template.
+"size_mib" = 200
 # GPU as on iPadOS 27: fb-bgra=1 renders in system memory with transient attachments in GMEM (Turnip patches), fb-gpu=1 hands the
 # compositor's frames to the render server's GPU copy when the display cannot scan them out directly (dpu-scanout=2).
 # macOS runtime: storage, display, HID, USB, CPU, GPU, audio, Wi-Fi and Bluetooth. AppSync
@@ -240,7 +253,18 @@ ramdisk_max_bytes = 199229440
 # so for the first seconds of use on macOS). thermal=1 logs the SoC temperatures beside the firmware's frequency limit, and thermal-level=1 gives
 # macOS its thermal pressure level from them (the service thermalmonitord reads). board-clock=7 runs the calendar from the
 # PMIC counter plus the offset stored in the PMIC, and stores it when the system sets the time.
-"kernel_args" = ["debug=0x14e", "kt_fixed_zones=120", "-no_slto_panic", "use_contiguous_hint=0", "native-source-storage=1", "native-ufs-root=1", "offline-mobile-graphics-load=1", "offline-mobile-graphics-client=1", "offline-legacy-register=1", "offline-legacy-gop=1", "offline-legacy-unit-scale=2", "offline-legacy-pm=1", "offline-legacy-validate=1", "offline-legacy-transfer=1", "offline-legacy-cpu-present=1", "offline-legacy-phase=4", "offline-key-events=1", "aks=1", "aks-sls=3", "offline-hid-input=1", "offline-hid-home=1", "touch=4", "touch-hid=1", "buttons=1", "keyboard=1", "log=1", "smp=1", "armcpu-spi-ipi=1", "armcpu-self-ipi=1", "data-persist=2", "backlight=1", "cpufreq=4", "dpu-scanout=2", "no-lc=1", "vsync=120", "vsync-fixed=1", "disable-watchdogd=1", "usb=1", "adsp=2", "audio=12", "wifi=5", "apfs-boot-shim=1", "ethernet=1", "bluetooth=1", "fb-half=2", "gpu-power=9", "gpu-metal=1", "fb-gpu=1", "fb-bgra=1", "gpu-dcvs=1", "gpu-addon=1", "timebase-hz=24000000", "ca-triple-buffer=1", "ca-free-wakeup=1", "autoreset=7200", "uefi-watchdog=1", "diag=1", "diag-export=7140", "gpu-trace=1", "log-gpu=1", "log-video=1", "log-bluetooth=3", "build-tag=s00000", "ci-mps=0"]
+# vm_compression_limit=1572864 pins the compressor's pool at 6 GiB (the value counts 4 KiB pages), so the kernel address
+# space the pool reserves does not grow with the window (payload.adt owned_memory_size below).
+# ci-mps=0 makes the Metal plugin set CI_ENABLE_MPS=0 unless the environment already sets it, so Core Image blurs with its own
+# Metal kernels instead of MetalPerformanceShaders. With its half-float working format, Core Image has handed
+# MPSImageGaussianBlur a nil source on this GPU; iconservicesagent then aborts in MPSImageUnaryKernel.mm:335 at each start,
+# and every app that draws an icon waits on its synchronous reply.
+# 12 GiB unit (local): upstream's line with autoreset=7200 and vm_compression_limit=1572864 together is 1001 bytes, over the
+# limit, so autoreset is left out here: that is the persistent desktop of reports/macos-unattended-desktop.md (autoreset=0
+# with uefi-watchdog=1, the kernel feeds the firmware's watchdog without a return deadline), and the unit does not drop
+# into fastboot, where it does not charge, after two hours. A timed run passes autoreset with --kernel-arg and then has
+# to leave out another argument.
+"kernel_args" = ["debug=0x14e", "kt_fixed_zones=120", "-no_slto_panic", "use_contiguous_hint=0", "native-source-storage=1", "native-ufs-root=1", "offline-mobile-graphics-load=1", "offline-mobile-graphics-client=1", "offline-legacy-register=1", "offline-legacy-gop=1", "offline-legacy-unit-scale=2", "offline-legacy-pm=1", "offline-legacy-validate=1", "offline-legacy-transfer=1", "offline-legacy-cpu-present=1", "offline-legacy-phase=4", "offline-key-events=1", "aks=1", "aks-sls=3", "offline-hid-input=1", "offline-hid-home=1", "touch=4", "touch-hid=1", "buttons=1", "keyboard=1", "log=1", "smp=1", "armcpu-spi-ipi=1", "armcpu-self-ipi=1", "data-persist=2", "backlight=1", "cpufreq=4", "dpu-scanout=2", "no-lc=1", "vsync=120", "vsync-fixed=1", "disable-watchdogd=1", "usb=1", "adsp=2", "audio=12", "wifi=5", "apfs-boot-shim=1", "ethernet=1", "bluetooth=1", "fb-half=2", "gpu-power=9", "gpu-metal=1", "fb-gpu=1", "fb-bgra=1", "gpu-dcvs=1", "gpu-addon=1", "timebase-hz=24000000", "ca-triple-buffer=1", "ca-free-wakeup=1", "uefi-watchdog=1", "log-gpu=1", "vm_compression_limit=1572864", "ci-mps=0"]
 
 # WindowServer presents 8-bit BGRA, which the display pipes scan out directly, instead of half float converted by the GPU each frame:
 # QuartzCore's IOMFBDisplay::framebuffer_pixel_format (26C5035r, dyld_shared_cache_arm64e.03 file offset 0x5de1134) keeps 'RGhA' on
@@ -258,17 +282,30 @@ ramdisk_max_bytes = 199229440
 ["os_overrides"."macos-27.3-26C5035r"."payload"."adt"]
 # T6050, the chip of Mac17,11.
 "chip_id" = "6050"
-# The 6 GiB bootstrap window spans the high bank. DarwinBoot lists the holes
-# and firmware reservations so XNU skips them when creating VM pages.
-"owned_memory_size" = "0x180000000"
+# 12 GiB unit only (local branch): bank 1 is 0x880000000..0xB00000000 there, and the window is its largest free run,
+# 0x8C0000000..0xB00000000, 9 GiB. That is the most the generator and DarwinBoot accept, and the most the 22 pages of
+# 4 KiB bootstrap tables map wherever the window and the kernel's virtual base fall (native-4k-bootstrap-capacity.patch).
+# The compressor's pool is pinned (vm_compression_limit above), so the kernel address space it reserves does not grow
+# with the window. The floor is the start of that run: DarwinBoot starts the window no lower. DarwinBoot lists the
+# memory the firmware keeps inside the window in a table of this many ranges, and this kernel leaves them out
+# (window-memory-excluded-ranges.patch). Other profiles keep the single run: their kernels do not read the table.
+"owned_memory_size" = "0x240000000"
 "owned_memory_excluded_ranges" = 64
+"owned_memory_floor" = "0x8C0000000"
 # DarwinBoot records where the payload RAM disk and the entry's initrd buffer lie in the firmware's memory map
 # (sysctl kern.boot_payload_memory).
 "loader_inputs" = true
-# XNU adopts the low bank through DarwinBoot's free-range table. Keep the
-# fixed ADSP buffer outside the VM allocator.
-"owned_memory_outside_ranges" = 64
-"owned_memory_outside_reserved" = ["0xd0000000:0x10000"]
+# DarwinBoot lists the free memory outside the window and the kernel adopts what lies below the window as ordinary VM
+# memory, page by page after a probe load (window-outside-memory-adoption.patch); memory-outside=0 on the command line
+# leaves it alone. Below this window lie the rest of bank 1 (0x880000000..0x8B9D00000 and 0x8B9F00000..0x8BBD00000,
+# 0.93 GiB) and the free runs of the low bank (between 0xBAB00000 and 0xFF800000, 0.85 GiB in the firmware's memory map).
+# The second range keeps all of bank 1 out, for two reasons: adopting bank 1 memory has frozen or flickered on this unit
+# and the kernel adopts nothing at all when the runs it is given span more than 4 GiB, which they would
+# with bank 1 among them. So the kernel adopts the low bank only. The first range is the audio driver's DSP buffer at a
+# fixed 32-bit address (package/AudioProbe.cpp kLowBuffer, 64 KiB). The table has the 16 ranges the kernel reads. The GPU
+# pool stays off (gpu-pool=0).
+"owned_memory_outside_ranges" = 16
+"owned_memory_outside_reserved" = ["0xd0000000:0x10000", "0x880000000:0x280000000"]
 
 ["os_overrides"."macos-27.3-26C5035r"."payload"."runtime"]
 "target" = "macos27"
@@ -292,7 +329,8 @@ ramdisk_max_bytes = 199229440
 "wifi_bin_prefix" = "bin"
 
 ["os_overrides"."macos-27.3-26C5035r"]
-"remove" = ["payload.skip_setup_tool", "payload.runtime.wallpapers", "payload.runtime.audio_system_plugins", "payload.runtime.wifi_launchd_cache", "payload.runtime.appsync", "payload.runtime.launchd_job_environment"]
+# 12 GiB unit (local): payload.install is removed (no Data initialization entry in test payloads; see payload above).
+"remove" = ["payload.install", "payload.skip_setup_tool", "payload.runtime.wallpapers", "payload.runtime.audio_system_plugins", "payload.runtime.wifi_launchd_cache", "payload.runtime.appsync", "payload.runtime.launchd_job_environment"]
 
 ["os_overrides"."macos-27.3-26C5035r"."components"]
 # SoftwareAES: NativeAES.cpp is compiled against the 26C5035r IOAESAccelerator fixture (build-gop-legacy-display-27.py), not with
