@@ -64,6 +64,36 @@ jobs:
           ref: 8156d2e54a9f57818dc8b415a1a7dc28ad9ba4be
           path: uefi-sheng
           submodules: false
+      - name: Patch firmware memory map for 12 GiB units
+        run: |
+          python3 - uefi-sheng <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1]) / 'Platforms/Xiaomi/shengPkg/Library/MemoryMapLib/MemoryMapLib.c'
+          text = path.read_text()
+          edits = [
+              # Static fallback: end bank 1 low where the 12 GiB unit's hole starts (0x8B9D00000).
+              ('{"DRAM bank 1 low", 0x880000000, 0x3B300000,',
+               '{"DRAM bank 1 low", 0x880000000, 0x39D00000,'),
+              # Take the ABL /memory path on 12 GiB units as well as 8 GiB ones.
+              ('Fdt32ToCpu (ReadUnaligned32 (Value)) != 8 ||',
+               '(Fdt32ToCpu (ReadUnaligned32 (Value)) != 8 && Fdt32ToCpu (ReadUnaligned32 (Value)) != 12) ||'),
+              # 12 GiB banks run to 0xB00000000.
+              ('(Base >= 0x880000000ULL && End <= 0xa00000000ULL))) { return; }',
+               '(Base >= 0x880000000ULL && End <= 0xb00000000ULL))) { return; }'),
+              ('if (Base == 0x8c0000000ULL && End == 0xa00000000ULL) { HasHighBank = TRUE; }',
+               'if (Base == 0x8c0000000ULL && End > Base) { HasHighBank = TRUE; }'),
+              ('(Inputs[I].Base >= 0x880000000ULL && Inputs[I].End <= 0xa00000000ULL))) { return; }',
+               '(Inputs[I].Base >= 0x880000000ULL && Inputs[I].End <= 0xb00000000ULL))) { return; }'),
+          ]
+          for old, new in edits:
+              if text.count(old) != 1:
+                  sys.exit(f'12G patch: expected one match for: {old}')
+              text = text.replace(old, new)
+          path.write_text(text)
+          print('12G memory map patch applied to', path)
+          PY
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
@@ -142,6 +172,8 @@ jobs:
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/.cache/xnu-work
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/.cache/fakeroot
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/build/xnu
+      - name: Drop cached Data seed so data_gib takes effect
+        run: rm -f UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/runtime/data.dbr
       - name: Prepare installation
         working-directory: UniXNU
         run: |
