@@ -61,7 +61,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: zus12873/uefi-sheng
-          ref: 5dfcc572c7dfde37f940a17e97168102303bdb4f
+          ref: 20331338c045db384b938b57e0a62de23fec73d5
           path: uefi-sheng
           submodules: false
       - uses: actions/setup-python@v5
