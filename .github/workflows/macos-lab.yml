@@ -82,8 +82,10 @@ jobs:
               # 12 GiB banks run to 0xB00000000.
               ('(Base >= 0x880000000ULL && End <= 0xa00000000ULL))) { return; }',
                '(Base >= 0x880000000ULL && End <= 0xb00000000ULL))) { return; }'),
+              # A/B test: keep the 12 GiB hole fix but do not hand the extra 4 GiB above 0xA00000000 to the OS.
               ('if (Base == 0x8c0000000ULL && End == 0xa00000000ULL) { HasHighBank = TRUE; }',
-               'if (Base == 0x8c0000000ULL && End > Base) { HasHighBank = TRUE; }'),
+               'if (End > 0xa00000000ULL) { if (Base >= 0xa00000000ULL) { return; } End = 0xa00000000ULL; Free[I].End = End; }\n'
+               '    if (Base == 0x8c0000000ULL && End > Base) { HasHighBank = TRUE; }'),
               ('(Inputs[I].Base >= 0x880000000ULL && Inputs[I].End <= 0xa00000000ULL))) { return; }',
                '(Inputs[I].Base >= 0x880000000ULL && Inputs[I].End <= 0xb00000000ULL))) { return; }'),
           ]
@@ -92,7 +94,7 @@ jobs:
                   sys.exit(f'12G patch: expected one match for: {old}')
               text = text.replace(old, new)
           path.write_text(text)
-          print('12G memory map patch applied to', path)
+          print('12G memory map patch (extra 4 GiB capped) applied to', path)
           PY
       - uses: actions/setup-python@v5
         with:
@@ -172,8 +174,6 @@ jobs:
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/.cache/xnu-work
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/.cache/fakeroot
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/build/xnu
-      - name: Drop cached Data seed so data_gib takes effect
-        run: rm -f UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/runtime/data.dbr
       - name: Prepare installation
         working-directory: UniXNU
         run: |
