@@ -64,6 +64,25 @@ jobs:
           ref: 8156d2e54a9f57818dc8b415a1a7dc28ad9ba4be
           path: uefi-sheng
           submodules: false
+      - name: Patch firmware memory map for 12 GiB units
+        run: |
+          python3 - uefi-sheng <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1]) / 'Platforms/Xiaomi/shengPkg/Library/MemoryMapLib/MemoryMapLib.c'
+          text = path.read_text()
+          # The 12 GiB unit's own bootloader /memory list for bank 1 (as in zus12873/uefi-sheng 5dfcc57, verified to the
+          # login window on a 24018RPACC unit): skip the holes at 0x8B9D00000 and 0x8BBD00000. Static map only; the FDT path
+          # stays 8 GiB-only, and bank 1 high keeps the stock 5 GiB.
+          old = '  {"DRAM bank 1 low", 0x880000000, 0x3B300000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv, WRITE_BACK_XN},\n'
+          new = ('  {"DRAM bank 1 low", 0x880000000, 0x39D00000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv, WRITE_BACK_XN},\n'
+                 '  {"DRAM bank 1 mid", 0x8B9F00000, 0x01E00000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv, WRITE_BACK_XN},\n')
+          if text.count(old) != 1:
+              sys.exit('12G static patch: bank 1 low row not found')
+          path.write_text(text.replace(old, new))
+          print('12G static memory map patch applied to', path)
+          PY
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
@@ -142,6 +161,8 @@ jobs:
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/.cache/xnu-work
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/.cache/fakeroot
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/build/xnu
+      - name: Drop cached Data seed so data_gib takes effect
+        run: rm -f UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/runtime/data.dbr
       - name: Prepare installation
         working-directory: UniXNU
         run: |
