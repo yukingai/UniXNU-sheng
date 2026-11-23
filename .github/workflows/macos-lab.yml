@@ -53,15 +53,25 @@ jobs:
       - name: Check out core sources
         uses: actions/checkout@v4
         with:
-          repository: UniXNU/UniXNU
-          ref: ${{ inputs.core_ref }}
+          repository: zus12873/UniXNU
+          ref: 2130c59a0335bc449a9a6760a15f9950ada0ddcb
           path: UniXNU
-          submodules: recursive
+          submodules: false
+      - name: Check out core submodules (three of them from the zus12873 forks)
+        working-directory: UniXNU
+        run: |
+          set -e
+          git submodule init
+          git config submodule.drivers/Adreno740.url https://github.com/zus12873/Adreno740.git
+          git config submodule.drivers/AdrenoMetal.url https://github.com/zus12873/AdrenoMetal.git
+          git config submodule.drivers/DarwinBoot.url https://github.com/zus12873/DarwinBoot.git
+          git submodule update --recursive
+          git submodule status
       - name: Check out firmware sources
         uses: actions/checkout@v4
         with:
-          repository: UniXNU/uefi-sheng
-          ref: 8156d2e54a9f57818dc8b415a1a7dc28ad9ba4be
+          repository: zus12873/uefi-sheng
+          ref: 20331338c045db384b938b57e0a62de23fec73d5
           path: uefi-sheng
           submodules: false
       - uses: actions/setup-python@v5
@@ -194,6 +204,15 @@ jobs:
             cp "$target/userdata/userdata-root.json" artifacts/
             zstd -T0 -3 --sparse "$target/userdata/userdata-root.img" -o artifacts/userdata-root.img.zst
           fi
+      - name: Publish the boot image alone
+        uses: actions/upload-artifact@v4
+        with:
+          name: sheng-boot
+          path: |
+            artifacts/boot.img
+            artifacts/package.manifest.json
+            artifacts/userdata-root.json
+          retention-days: 3
       - uses: actions/upload-artifact@v4
         with:
           name: sheng-macos-27
