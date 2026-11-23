@@ -68,7 +68,11 @@ jobs:
           git -C drivers/DarwinBoot checkout -q bdb6ff7119780083ada9683cc34d54fbd3c8c9cb
           git -C drivers/Adreno740 fetch https://github.com/zus12873/Adreno740 fd7a0ca4e296f5193e06c4ff26b634e2c11eaac4
           git -C drivers/Adreno740 checkout -q fd7a0ca4e296f5193e06c4ff26b634e2c11eaac4
-          git submodule status drivers/DarwinBoot drivers/Adreno740
+          git -C drivers/AdrenoMetal fetch https://github.com/zus12873/AdrenoMetal 685f37cf01de3c7818fd3336e828145d02885f84
+          git -C drivers/AdrenoMetal checkout -q 685f37cf01de3c7818fd3336e828145d02885f84
+          git add drivers/AdrenoMetal
+          git -c user.name=ci -c user.email=ci@localhost commit -q -m "AdrenoMetal: zus12873 685f37c (pinned R2507 with 0064)"
+          git submodule status drivers/DarwinBoot drivers/Adreno740 drivers/AdrenoMetal
           grep -n "9 GiB" scripts/unixnu/devicetree.py | head -3
       - name: Check out firmware sources
         uses: actions/checkout@v4
