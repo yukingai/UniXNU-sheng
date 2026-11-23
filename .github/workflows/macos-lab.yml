@@ -57,32 +57,26 @@ jobs:
           ref: ${{ inputs.core_ref }}
           path: UniXNU
           submodules: recursive
+      - name: Apply the 12 GiB unit's 9 GiB window to the core (zus12873/UniXNU 29e63b4)
+        working-directory: UniXNU
+        run: |
+          set -e
+          z=29e63b42be229f594c1b027108ff231894511725
+          git fetch --depth=2 https://github.com/zus12873/UniXNU "$z"
+          git -c user.name=ci -c user.email=ci@localhost cherry-pick --no-edit "$z"
+          git -C drivers/DarwinBoot fetch https://github.com/zus12873/DarwinBoot bdb6ff7119780083ada9683cc34d54fbd3c8c9cb
+          git -C drivers/DarwinBoot checkout -q bdb6ff7119780083ada9683cc34d54fbd3c8c9cb
+          git -C drivers/Adreno740 fetch https://github.com/zus12873/Adreno740 fd7a0ca4e296f5193e06c4ff26b634e2c11eaac4
+          git -C drivers/Adreno740 checkout -q fd7a0ca4e296f5193e06c4ff26b634e2c11eaac4
+          git submodule status drivers/DarwinBoot drivers/Adreno740
+          grep -n "9 GiB" scripts/unixnu/devicetree.py | head -3
       - name: Check out firmware sources
         uses: actions/checkout@v4
         with:
-          repository: UniXNU/uefi-sheng
-          ref: 8156d2e54a9f57818dc8b415a1a7dc28ad9ba4be
+          repository: zus12873/uefi-sheng
+          ref: 20331338c045db384b938b57e0a62de23fec73d5
           path: uefi-sheng
           submodules: false
-      - name: Patch firmware memory map for 12 GiB units
-        run: |
-          python3 - uefi-sheng <<'PY'
-          from pathlib import Path
-          import sys
-
-          path = Path(sys.argv[1]) / 'Platforms/Xiaomi/shengPkg/Library/MemoryMapLib/MemoryMapLib.c'
-          text = path.read_text()
-          # The 12 GiB unit's own bootloader /memory list for bank 1 (as in zus12873/uefi-sheng 5dfcc57, verified to the
-          # login window on a 24018RPACC unit): skip the holes at 0x8B9D00000 and 0x8BBD00000. Static map only; the FDT path
-          # stays 8 GiB-only, and bank 1 high keeps the stock 5 GiB.
-          old = '  {"DRAM bank 1 low", 0x880000000, 0x3B300000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv, WRITE_BACK_XN},\n'
-          new = ('  {"DRAM bank 1 low", 0x880000000, 0x39D00000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv, WRITE_BACK_XN},\n'
-                 '  {"DRAM bank 1 mid", 0x8B9F00000, 0x01E00000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv, WRITE_BACK_XN},\n')
-          if text.count(old) != 1:
-              sys.exit('12G static patch: bank 1 low row not found')
-          path.write_text(text.replace(old, new))
-          print('12G static memory map patch applied to', path)
-          PY
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
