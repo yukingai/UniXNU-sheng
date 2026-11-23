@@ -207,6 +207,15 @@ jobs:
             cp "$target/userdata/userdata-root.json" artifacts/
             zstd -T0 -3 --sparse "$target/userdata/userdata-root.img" -o artifacts/userdata-root.img.zst
           fi
+      - name: Publish the boot image alone
+        uses: actions/upload-artifact@v4
+        with:
+          name: sheng-boot
+          path: |
+            artifacts/boot.img
+            artifacts/package.manifest.json
+            artifacts/userdata-root.json
+          retention-days: 3
       - uses: actions/upload-artifact@v4
         with:
           name: sheng-macos-27
