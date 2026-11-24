@@ -44,6 +44,7 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
       UNIXNU_UNIQUE_CHIP_ID: ${{ secrets.UNIXNU_UNIQUE_CHIP_ID }}
       UNIXNU_LAB_PASSWORD: ${{ secrets.UNIXNU_LAB_PASSWORD }}
+      UNIXNU_EXTRA_USERS: ${{ secrets.UNIXNU_EXTRA_USERS }}
     steps:
       - name: Check out device sources
         uses: actions/checkout@v4
@@ -154,6 +155,45 @@ jobs:
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/build/xnu
       - name: Drop cached Data seed so data_gib takes effect
         run: rm -f UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/runtime/data.dbr
+      - name: Extra administrator accounts from UNIXNU_EXTRA_USERS
+        run: |
+          # One "name:password" per line in the secret; each becomes an admin (uid 502, 503, ...). The list goes to a root-only
+          # file that the seed script (run through sudo, which drops the environment) reads and deletes.
+          umask 077
+          printf '%s\n' "$UNIXNU_EXTRA_USERS" > "$RUNNER_TEMP/extra-users"
+          sudo install -m 600 -o root "$RUNNER_TEMP/extra-users" /var/root/unixnu-extra-users
+          rm -f "$RUNNER_TEMP/extra-users"
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path('UniXNU/scripts/make-macos-data-seed.py'); s = p.read_text()
+          extra = """
+          def extra_users():
+              path = Path('/var/root/unixnu-extra-users')
+              if not path.is_file():
+                  return []
+              users = []
+              for line in path.read_text().splitlines():
+                  line = line.strip()
+                  if not line or ':' not in line:
+                      continue
+                  name, password = line.split(':', 1)
+                  if not name.isidentifier() and not name.replace('-', '').replace('.', '').isalnum():
+                      raise SystemExit('bad extra user name')
+                  users.append((name.lower(), password))
+              path.unlink()
+              return users
+          """
+          import textwrap
+          s = s.replace('\ndef build(parser, args, os_mount):', textwrap.dedent(extra) + '\n\ndef build(parser, args, os_mount):', 1)
+          a = "                add_user(scratch / DSLOCAL, *args.user.split(':', 1), real_name=args.real_name)\n"
+          assert a in s
+          s = s.replace(a, a + "            extras = extra_users()\n            for i, (n, pw) in enumerate(extras):\n                add_user(scratch / DSLOCAL, n, pw, uid=502 + i)\n", 1)
+          b = "                add_home(template, scratch, args.user.split(':', 1)[0])\n"
+          assert b in s
+          s = s.replace(b, b + "            for i, (n, pw) in enumerate(extras):\n                add_home(template, scratch, n, uid=502 + i)\n", 1)
+          p.write_text(s)
+          print('extra-user support added')
+          PY
       - name: Prepare installation
         working-directory: UniXNU
         run: |
