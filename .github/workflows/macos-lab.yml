@@ -68,6 +68,19 @@ jobs:
           git config submodule.drivers/DarwinBoot.url https://github.com/zus12873/DarwinBoot.git
           git submodule update --recursive
           git submodule status
+      - name: ArmCpu starts only the first armcpu-cpus=N cores (default all)
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path('UniXNU/drivers/ArmCpu/ArmCpu.cpp'); s = p.read_text()
+          a = "    if (smp == 0 || ml_get_cpu_number (id) < 0 || ml_get_cpu_number (id) >= ARMCPU_SMP_SLOTS) {\n"
+          assert s.count(a) == 1, 'ArmCpu probe line not found'
+          b = ("    unsigned limit = ARMCPU_SMP_SLOTS;\n"
+               "    PE_parse_boot_argn (\"armcpu-cpus\", &limit, sizeof (limit));\n"
+               "    if (smp == 0 || ml_get_cpu_number (id) < 0 || ml_get_cpu_number (id) >= ARMCPU_SMP_SLOTS ||\n"
+               "        ml_get_cpu_number (id) >= (int) limit) {\n")
+          p.write_text(s.replace(a, b, 1)); print('armcpu-cpus added')
+          PY
       - name: Check out firmware sources
         uses: actions/checkout@v4
         with:
@@ -153,8 +166,6 @@ jobs:
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/.cache/xnu-work
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/.cache/fakeroot
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/build/xnu
-      - name: Drop cached Data seed so data_gib takes effect
-        run: rm -f UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/runtime/data.dbr
       - name: Extra administrator accounts from UNIXNU_EXTRA_USERS
         run: |
           # One "name:password" per line in the secret; each becomes an admin (uid 502, 503, ...). The list goes to a root-only
