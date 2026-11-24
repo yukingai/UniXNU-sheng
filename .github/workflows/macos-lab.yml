@@ -179,7 +179,7 @@ jobs:
                   name, password = line.split(':', 1)
                   if not name.isidentifier() and not name.replace('-', '').replace('.', '').isalnum():
                       raise SystemExit('bad extra user name')
-                  users.append((name.lower(), password))
+                  users.append((name.lower(), password, name))
               path.unlink()
               return users
           """
@@ -187,10 +187,10 @@ jobs:
           s = s.replace('\ndef build(parser, args, os_mount):', textwrap.dedent(extra) + '\n\ndef build(parser, args, os_mount):', 1)
           a = "                add_user(scratch / DSLOCAL, *args.user.split(':', 1), real_name=args.real_name)\n"
           assert a in s
-          s = s.replace(a, a + "            extras = extra_users()\n            for i, (n, pw) in enumerate(extras):\n                add_user(scratch / DSLOCAL, n, pw, uid=502 + i)\n", 1)
+          s = s.replace(a, a + "            extras = extra_users()\n            for i, (n, pw, real) in enumerate(extras):\n                add_user(scratch / DSLOCAL, n, pw, uid=502 + i, real_name=real)\n", 1)
           b = "                add_home(template, scratch, args.user.split(':', 1)[0])\n"
           assert b in s
-          s = s.replace(b, b + "            for i, (n, pw) in enumerate(extras):\n                add_home(template, scratch, n, uid=502 + i)\n", 1)
+          s = s.replace(b, b + "            for i, (n, pw, real) in enumerate(extras):\n                add_home(template, scratch, n, uid=502 + i)\n", 1)
           p.write_text(s)
           print('extra-user support added')
           PY
