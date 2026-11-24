@@ -152,6 +152,8 @@ jobs:
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/.cache/xnu-work
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/.cache/fakeroot
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/build/xnu
+      - name: Drop cached Data seed so data_gib takes effect
+        run: rm -f UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/runtime/data.dbr
       - name: Prepare installation
         working-directory: UniXNU
         run: |
