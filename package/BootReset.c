@@ -116,6 +116,54 @@ int boot_reset_probe(char *text, unsigned cap) {
   return writable ? 0 : 1;
 }
 
+// The PMK8550 power-on peripherals (SID 0, pmk8550.dtsi pon@1300 reg <0x1300>, <0x800>, "hlos" and "pbs"): the power-on, warm-reset,
+// power-off and fault reason registers the PMIC latched for the last transition, raw (bytes 0x04..0x1f of each), for decoding off the
+// device. Observer reads only; nothing is written.
+int boot_reset_pon(char *text, unsigned cap) {
+  static const uint16_t ppids[2] = {0x008, 0x013};
+  static const char *const names[2] = {"pbs", "hlos"};
+  struct br_arbiter a;
+  memset(&a, 0, sizeof a);
+  a.core = map(SpmiCore, SpmiCoreSize);
+  a.cnfg = map(SpmiCnfg, SpmiCnfgSize);
+  int apid[2] = {-1, -1}, n = 0;
+  volatile uint32_t *obs = NULL;
+  uint64_t obs_size = 0;
+  if (!a.core || !a.cnfg) {snprintf(text, cap, "pon: arbiter not mapped"); goto out;}
+  {
+    const uint32_t version = a.core[0], apids = a.core[BR_FEATURES / 4] & BR_FEATURES_APIDS_MASK;
+    if (version < BR_VERSION_V7_MIN || version >= BR_VERSION_V8_MIN || !apids || apids > 1024) {
+      snprintf(text, cap, "pon: arbiter %08x apids %u not known", version, apids); goto out;
+    }
+    int top = -1;
+    for (uint32_t i = 0; i < apids; ++i) {
+      const uint32_t m = a.core[(BR_APID_MAP + 4 * i) / 4];
+      if (!m) continue;
+      for (int k = 0; k < 2; ++k)
+        if (((m >> 8) & 0xfff) == ppids[k] && apid[k] < 0) {apid[k] = (int)i; if ((int)i > top) top = (int)i;}
+    }
+    if (top < 0) {snprintf(text, cap, "pon: no apid for 0x008 or 0x013"); goto out;}
+    obs_size = ((uint64_t)BR_OBS_APID_STRIDE * ((uint64_t)top + 1) + 0xfff) & ~0xfffull;
+    obs = map(SpmiObsrvr, obs_size);
+    if (!obs) {snprintf(text, cap, "pon: observer not mapped"); goto out;}
+  }
+  n = snprintf(text, cap, "pon");
+  for (int k = 0; k < 2 && n > 0 && (unsigned)n < cap; ++k) {
+    n += snprintf(text + n, cap - (unsigned)n, " %s(apid %d) 04:", names[k], apid[k]);
+    if (apid[k] < 0) continue;
+    for (uint8_t r = 0x04; r < 0x20 && (unsigned)n < cap; ++r) {
+      uint8_t v = 0;
+      const int rc = br_read8(obs, &a, apid[k], r, &v);
+      n += rc ? snprintf(text + n, cap - (unsigned)n, " --") : snprintf(text + n, cap - (unsigned)n, " %02x", v);
+    }
+  }
+out:
+  if (a.core) ml_io_unmap((vm_offset_t)a.core, SpmiCoreSize);
+  if (a.cnfg) ml_io_unmap((vm_offset_t)a.cnfg, SpmiCnfgSize);
+  if (obs) ml_io_unmap((vm_offset_t)obs, (vm_size_t)obs_size);
+  return 0;
+}
+
 // Writes "bootloader" into the reboot-reason cell and verifies it, without restarting. Done once early in an unattended run, it sends every
 // later restart to fastboot: the timed one below, a watchdog bite, or a long press of the power key.
 int boot_reset_mark_bootloader(char *text, unsigned cap) {
