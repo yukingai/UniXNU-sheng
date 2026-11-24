@@ -39,6 +39,7 @@
 // while the hardware ran d1 under 80 % of its vote in 15 to 36 % of those windows (as low as 1171 MHz of 2803), d2 in 2 to 13 %
 // and d0 in none. The limit grows with the time all clusters stay loaded (run56 d1: 3 % of the windows at 50 s, 60 % at 200 s).
 #include <IOKit/IOService.h>
+#include <string.h>
 #include <IOKit/IOLib.h>
 #include <IOKit/IOMemoryDescriptor.h>
 #include <pexpert/pexpert.h>
@@ -173,8 +174,30 @@ void refreshRow() {
 }
 
 // Mode 4: the governor (see the header).
-constexpr int kCpuDomain[] = {0, 0, 0, 1, 1, 1, 1, 2};
-constexpr unsigned kCpus = sizeof kCpuDomain / sizeof kCpuDomain[0];
+constexpr unsigned kCpus = 8;
+// A CPU's frequency domain from its ADT reg (MPIDR Affinity1): 0..2 the A510 domain, 3..6 the A715/A710 domain, 7 the X3. The
+// ADT may list fewer cores than eight (payload.adt cpu_regs); the governor then reads only those, in the ADT's order.
+static int gCpuDomain[kCpus] = {0, 0, 0, 1, 1, 1, 1, 2};
+static unsigned gCpuCount = kCpus;
+static void readCpuDomains() {
+    unsigned n = 0;
+    for (unsigned c = 0; c < kCpus; ++c) {
+        char path[32];
+        snprintf(path, sizeof path, "/cpus/cpu%u", c);
+        IORegistryEntry *e = IORegistryEntry::fromPath(path, gIODTPlane);
+        if (!e) break;
+        OSData *reg = OSDynamicCast(OSData, e->getProperty("reg"));
+        if (reg && reg->getLength() >= 4) {
+            uint32_t r;
+            memcpy(&r, reg->getBytesNoCopy(), sizeof r);
+            const unsigned a = (r >> 8) & 0xff;
+            gCpuDomain[c] = a < 3 ? 0 : a < 7 ? 1 : 2;
+        }
+        e->release();
+        n = c + 1;
+    }
+    if (n) gCpuCount = n;
+}
 struct Levels {
     unsigned count;
     uint8_t index[kLutEntries];   // LUT rows in ascending frequency, non-turbo, within the floor and the cap
@@ -216,7 +239,8 @@ void setLevel(unsigned d, unsigned at) {
 
 void governorThread(void *, wait_result_t) {
     uint64_t lastIdle[kCpus] = {}, lastT = mach_absolute_time();
-    for (unsigned c = 0; c < kCpus; ++c) lastIdle[c] = sheng_cpu_idle_mach((int)c);
+    readCpuDomains();
+    for (unsigned c = 0; c < gCpuCount; ++c) lastIdle[c] = sheng_cpu_idle_mach((int)c);
     unsigned cur[3] = {}, down[3] = {}, quiet[3] = {};
     bool ready[3] = {};
     uint64_t boostAbs = 0, boostEnd = 0;
@@ -252,11 +276,11 @@ void governorThread(void *, wait_result_t) {
         if (framing) native_cpufreq_frame[1] = native_cpufreq_frame[1] + 1;
         const bool boost = t < boostEnd;
         uint64_t busy[3] = {};   // per mille of the busiest CPU
-        for (unsigned c = 0; c < kCpus; ++c) {
+        for (unsigned c = 0; c < gCpuCount; ++c) {
             const uint64_t idle = sheng_cpu_idle_mach((int)c), di = idle - lastIdle[c];
             lastIdle[c] = idle;
             const uint64_t b = di >= dt ? 0 : (dt - di) * 1000 / dt;
-            const int d = kCpuDomain[c];
+            const int d = gCpuDomain[c];
             if (b > busy[d]) busy[d] = b;
         }
         uint64_t ns = 0;

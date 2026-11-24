@@ -306,6 +306,9 @@ ramdisk_max_bytes = 199229440
 # pool stays off (gpu-pool=0).
 "owned_memory_outside_ranges" = 16
 "owned_memory_outside_reserved" = ["0xd0000000:0x10000", "0x880000000:0x280000000"]
+# Six cores (local test, as upstream 251b291 did on 2026-10-23): the little boot core cpu0 and the five big cores (A715 x2,
+# A710 x2, X3); the other two A510 (0x100, 0x200) are not listed, so XNU never knows or starts them.
+"cpu_regs" = "0,0x300,0x400,0x500,0x600,0x700"
 
 ["os_overrides"."macos-27.3-26C5035r"."payload"."runtime"]
 "target" = "macos27"
