@@ -39,6 +39,7 @@
 // while the hardware ran d1 under 80 % of its vote in 15 to 36 % of those windows (as low as 1171 MHz of 2803), d2 in 2 to 13 %
 // and d0 in none. The limit grows with the time all clusters stay loaded (run56 d1: 3 % of the windows at 50 s, 60 % at 200 s).
 #include <IOKit/IOService.h>
+#include <IOKit/IODeviceTreeSupport.h>
 #include <string.h>
 #include <IOKit/IOLib.h>
 #include <IOKit/IOMemoryDescriptor.h>
