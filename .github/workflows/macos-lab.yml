@@ -240,7 +240,6 @@ jobs:
           mkdir artifacts
           target=UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos
           cp "$target/boot/boot.img" "$target/payload/payload.img" "$target/kernel/kernel.macho" "$target/package.manifest.json" artifacts/
-          cp "$target/runtime/data.dbr" artifacts/
           cp "$target/tree/build/prime-list.txt" "$target/tree/build/prime-list.json" artifacts/
           if [ "$BUILD_ROOT_STORAGE" = true ]; then
             cp "$target/userdata/userdata-root.json" artifacts/
@@ -254,7 +253,7 @@ jobs:
             artifacts/boot.img
             artifacts/package.manifest.json
             artifacts/userdata-root.json
-          retention-days: 3
+          retention-days: 1
       - uses: actions/upload-artifact@v4
         with:
           name: sheng-macos-27
