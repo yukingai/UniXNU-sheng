@@ -101,6 +101,55 @@ static int append_job_state(const char **cursor,int disabled) {
 
 static int append_job(const char **cursor) {return append_job_state(cursor,1);}
 
+// lite=1 also covers the per-user launch agents: launchd keeps a user's overrides in disabled.<uid>.plist, which the system list above
+// never reaches, so Siri, the suggestion and knowledge agents, the widget scheduler (chronod, which kept the calendar and weather widgets
+// near 1.5 CPUs at login) and the wallpaper agent with its aerial videos (VTDecoderXPCService decoding on the CPU) all started at every
+// login. Written for the four local accounts (uid 501 to 504) on every boot, like the system list; labels that do not exist are ignored.
+static const char lite_agents[]=
+ "com.apple.wallpaper.agent,com.apple.wallpaper,com.apple.WallpaperAgent,com.apple.chronod,"
+ "com.apple.Siri.agent,com.apple.assistantd,com.apple.siriactionsd,com.apple.siriknowledged,com.apple.siriinferenced,"
+ "com.apple.sirittsd,com.apple.siri.context.service,com.apple.duetexpertd,com.apple.mediaanalysisd,com.apple.photoanalysisd,"
+ "com.apple.knowledge-agent,com.apple.knowledgeconstructiond,com.apple.intelligenceplatformd,com.apple.intelligenceflowd,"
+ "com.apple.spotlightknowledged,com.apple.suggestd,com.apple.parsec-fbf";
+static char user_policy[2048];
+static int write_user_policy(proc_t p,uint64_t scratch,unsigned uid) {
+ int error=0,fd=-1;int32_t result=0;
+ user_policy[0]=0;strlcat(user_policy,policy_head,sizeof(user_policy));
+ for(const char *c=lite_agents;*c;) {
+  const char *e=c;while(*e && *e!=',')++e;
+  if(e>c) {
+   size_t at=strlen(user_policy);
+   if(at+(size_t)(e-c)+32>=sizeof(user_policy))return EINVAL;
+   strlcat(user_policy,"<key>",sizeof(user_policy));at=strlen(user_policy);
+   memcpy(user_policy+at,c,(size_t)(e-c));user_policy[at+(size_t)(e-c)]=0;
+   strlcat(user_policy,"</key><true/>",sizeof(user_policy));
+  }
+  c=*e?e+1:e;
+ }
+ if(strlcat(user_policy,policy_tail,sizeof(user_policy))>=sizeof(user_policy))return EINVAL;
+ char path[96];
+ snprintf(path,sizeof(path),"/private/var/db/com.apple.xpc.launchd/disabled.%u.plist",uid);
+ if((error=copyout(path,scratch,strlen(path)+1)))return error;
+ struct open_args op={.path=scratch,.flags=O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW,.mode=0644};
+ if((error=POLICY_CALL("user policy open", open(p,&op,&result))))return error;
+ fd=result;
+ for(size_t sent=0,total=strlen(user_policy);sent<total;) {
+  size_t piece=total-sent<0x1f0?total-sent:0x1f0;
+  if((error=copyout(user_policy+sent,scratch+0x200,piece)))goto done;
+  struct write_args wr={.fd=fd,.cbuf=scratch+0x200,.nbyte=piece};
+  user_ssize_t written=0;
+  if((error=POLICY_CALL("user policy write", write(p,&wr,&written))))goto done;
+  if(written!=(user_ssize_t)piece){error=EIO;goto done;}
+  sent+=piece;
+ }
+ {struct fchown_args owner={.fd=fd,.uid=0,.gid=0};if((error=POLICY_CALL("user policy chown", fchown(p,&owner,&result))))goto done;}
+ {struct fchmod_args mode={.fd=fd,.mode=0644};if((error=POLICY_CALL("user policy chmod", fchmod(p,&mode,&result))))goto done;}
+ {struct fsync_args sync={.fd=fd};error=POLICY_CALL("user policy fsync", fsync(p,&sync,&result));}
+ done:
+ {struct close_args cl={.fd=fd};int e=POLICY_CALL("user policy close", sys_close(p,&cl,&result));if(!error)error=e;}
+ return error;
+}
+
 int sheng_boot_watchdog_policy(void *process, uint64_t scratch) {
  proc_t p=process;
  int enabled=0,error=0,fd=-1;int32_t result=0;
@@ -176,6 +225,12 @@ int sheng_boot_watchdog_policy(void *process, uint64_t scratch) {
    error=POLICY_CALL("launch policy marker open", open(p,&mark,&result));
    if(!error){struct close_args cl={.fd=result};error=POLICY_CALL("launch policy close", sys_close(p,&cl,&result));}
    else if(error==EEXIST)error=0;
+  }
+ }
+ if(!error && lite==1) {
+  for(unsigned uid=501;uid<=504;++uid) {
+   int e=write_user_policy(p,scratch,uid);
+   printf("sheng launch policy: user %u agents %s (%d)\n",uid,e?"not written":"disabled",e);
   }
  }
  sheng_watchdog_policy_status=error;
