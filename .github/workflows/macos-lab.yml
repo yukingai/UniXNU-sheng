@@ -67,6 +67,9 @@ jobs:
           git config submodule.drivers/AdrenoMetal.url https://github.com/zus12873/AdrenoMetal.git
           git config submodule.drivers/DarwinBoot.url https://github.com/zus12873/DarwinBoot.git
           git submodule update --recursive
+          # AdrenoMetal: the official tip (R2507 runtime, Shader Cache sleep and login-registration fixes, copied host buffer guards)
+          git -C drivers/AdrenoMetal fetch https://github.com/UniXNU/AdrenoMetal cc0a4e8e57d20f4a4698753c2530875f2b10c0ca
+          git -C drivers/AdrenoMetal checkout --detach cc0a4e8e57d20f4a4698753c2530875f2b10c0ca
           git submodule status
       - name: ArmCpu starts only the first armcpu-cpus=N cores (default all)
         run: |
