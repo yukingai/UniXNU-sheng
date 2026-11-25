@@ -110,7 +110,9 @@ static const char lite_agents[]=
  "com.apple.Siri.agent,com.apple.assistantd,com.apple.siriactionsd,com.apple.siriknowledged,com.apple.siriinferenced,"
  "com.apple.sirittsd,com.apple.siri.context.service,com.apple.duetexpertd,com.apple.mediaanalysisd,com.apple.photoanalysisd,"
  "com.apple.knowledge-agent,com.apple.knowledgeconstructiond,com.apple.intelligenceplatformd,com.apple.intelligenceflowd,"
- "com.apple.spotlightknowledged,com.apple.suggestd,com.apple.parsec-fbf";
+ "com.apple.spotlightknowledged,com.apple.suggestd,com.apple.parsec-fbf,com.apple.siriinferenced,"
+ // macOS ships these three disabled in a new account; the file above replaces the account's own list, so they are kept.
+ "com.apple.FolderActionsDispatcher,com.apple.ScriptMenuApp,com.apple.appleseed.seedusaged.postinstall";
 static char user_policy[2048];
 static int write_user_policy(proc_t p,uint64_t scratch,unsigned uid) {
  int error=0,fd=-1;int32_t result=0;
