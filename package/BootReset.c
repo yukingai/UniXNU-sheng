@@ -164,6 +164,64 @@ out:
   return 0;
 }
 
+// The PMIC PON log (Gen3, PMK8350 and later): the PBS firmware appends power-on, power-off, reset and fault events to a FIFO in one of
+// the PMK8550 SDAM blocks (downstream pmic-pon-log.c: push pointer at 0x46, 4-byte entries {state, event, data1, data0} in 0x4B..0xBF).
+// Which SDAM holds it is not known here, so every SDAM-typed peripheral of SID 0 between 0x7000 and 0x9F00 (peripheral type 0x2E) has
+// its 0x46 printed, and the FIFO of each whose pointer lies in 0x4B..0xC0 is dumped raw (at most three), decoded off the device. Reads only.
+int boot_reset_ponlog(char *text, unsigned cap) {
+  struct br_arbiter a;
+  memset(&a, 0, sizeof a);
+  a.core = map(SpmiCore, SpmiCoreSize);
+  a.cnfg = map(SpmiCnfg, SpmiCnfgSize);
+  int apid[0x30], n = 0, dumped = 0;
+  for (int k = 0; k < 0x30; ++k) apid[k] = -1;
+  volatile uint32_t *obs = NULL;
+  uint64_t obs_size = 0;
+  if (!a.core || !a.cnfg) {snprintf(text, cap, "ponlog: arbiter not mapped"); goto out;}
+  {
+    const uint32_t version = a.core[0], apids = a.core[BR_FEATURES / 4] & BR_FEATURES_APIDS_MASK;
+    if (version < BR_VERSION_V7_MIN || version >= BR_VERSION_V8_MIN || !apids || apids > 1024) {
+      snprintf(text, cap, "ponlog: arbiter %08x apids %u not known", version, apids); goto out;
+    }
+    int top = -1;
+    for (uint32_t i = 0; i < apids; ++i) {
+      const uint32_t m = a.core[(BR_APID_MAP + 4 * i) / 4];
+      if (!m) continue;
+      const uint32_t ppid = (m >> 8) & 0xfff;
+      if (ppid >= 0x070 && ppid < 0x0a0 && apid[ppid - 0x070] < 0) {apid[ppid - 0x070] = (int)i; if ((int)i > top) top = (int)i;}
+    }
+    if (top < 0) {snprintf(text, cap, "ponlog: no apid for 0x070..0x09f"); goto out;}
+    obs_size = ((uint64_t)BR_OBS_APID_STRIDE * ((uint64_t)top + 1) + 0xfff) & ~0xfffull;
+    obs = map(SpmiObsrvr, obs_size);
+    if (!obs) {snprintf(text, cap, "ponlog: observer not mapped"); goto out;}
+  }
+  n = snprintf(text, cap, "ponlog ptr");
+  for (int k = 0; k < 0x30 && n > 0 && (unsigned)n < cap; ++k) {
+    if (apid[k] < 0) continue;
+    uint8_t type = 0, ptr = 0;
+    if (br_read8(obs, &a, apid[k], 0x04, &type) || type != 0x2e) continue;
+    if (br_read8(obs, &a, apid[k], 0x46, &ptr)) continue;
+    n += snprintf(text + n, cap - (unsigned)n, " %02x:%02x", 0x70 + k, ptr);
+  }
+  for (int k = 0; k < 0x30 && dumped < 3 && n > 0 && (unsigned)n < cap; ++k) {
+    if (apid[k] < 0) continue;
+    uint8_t type = 0, ptr = 0;
+    if (br_read8(obs, &a, apid[k], 0x04, &type) || type != 0x2e) continue;
+    if (br_read8(obs, &a, apid[k], 0x46, &ptr) || ptr < 0x4b || ptr > 0xc0) continue;
+    n += snprintf(text + n, cap - (unsigned)n, " | sdam %02x fifo 4b:", 0x70 + k);
+    for (uint8_t r = 0x4b; r <= 0xbf && n > 0 && (unsigned)n < cap; ++r) {
+      uint8_t v = 0;
+      n += br_read8(obs, &a, apid[k], r, &v) ? snprintf(text + n, cap - (unsigned)n, "--") : snprintf(text + n, cap - (unsigned)n, "%02x", v);
+    }
+    ++dumped;
+  }
+out:
+  if (a.core) ml_io_unmap((vm_offset_t)a.core, SpmiCoreSize);
+  if (a.cnfg) ml_io_unmap((vm_offset_t)a.cnfg, SpmiCnfgSize);
+  if (obs) ml_io_unmap((vm_offset_t)obs, (vm_size_t)obs_size);
+  return 0;
+}
+
 // Writes "bootloader" into the reboot-reason cell and verifies it, without restarting. Done once early in an unattended run, it sends every
 // later restart to fastboot: the timed one below, a watchdog bite, or a long press of the power key.
 int boot_reset_mark_bootloader(char *text, unsigned cap) {

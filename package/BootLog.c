@@ -411,6 +411,7 @@ extern unsigned native_legacy_state_words(char *, unsigned) __attribute__((weak_
 extern volatile uint32_t native_adreno_view_diag[6] __attribute__((weak_import));
 extern int boot_reset_probe(char *, unsigned) __attribute__((weak_import));
 extern int boot_reset_pon(char *, unsigned) __attribute__((weak_import));
+extern int boot_reset_ponlog(char *, unsigned) __attribute__((weak_import));
 extern int boot_reset_bootloader(char *, unsigned) __attribute__((weak_import));
 extern int boot_reset_mark_bootloader(char *, unsigned) __attribute__((weak_import));
 extern int reboot_kernel(int howto, char *message);
@@ -427,6 +428,7 @@ extern volatile uint32_t native_adreno_import_persistent[2] __attribute__((weak_
 extern volatile uint64_t native_adreno_import_fail_pa __attribute__((weak_import)), native_adreno_import_fail_offset __attribute__((weak_import));
 // What the reset probe and the autoreset attempt saw, for the [reset] section of the log.
 static char boot_log_reset_pon[240];
+static char boot_log_reset_ponlog[1200];
 static char boot_log_reset_probe_text[240], boot_log_reset_result[120], boot_log_reset_mark[64], boot_log_reset_watchdog[120];
 // The kernel message buffer (bsd/sys/msgbuf.h); only these leading fields are read.
 struct boot_log_msgbuf {int msg_magic, msg_size, msg_bufx, msg_bufr; char *msg_bufc;};
@@ -2543,6 +2545,7 @@ static size_t compose(char *out, size_t cap, uint32_t slot, unsigned now) {
     at = put(out, at, cap, "[reset]", 8);
     at = put(out, at, cap, boot_log_reset_probe_text, sizeof boot_log_reset_probe_text);
     if (boot_log_reset_pon[0]) at = put(out, at, cap, boot_log_reset_pon, sizeof boot_log_reset_pon);
+    if (boot_log_reset_ponlog[0]) at = put(out, at, cap, boot_log_reset_ponlog, sizeof boot_log_reset_ponlog);
     if (boot_log_reset_mark[0]) at = put(out, at, cap, boot_log_reset_mark, sizeof boot_log_reset_mark);
     if (boot_log_reset_watchdog[0]) at = put(out, at, cap, boot_log_reset_watchdog, sizeof boot_log_reset_watchdog);
     if (boot_log_reset_result[0]) at = put(out, at, cap, boot_log_reset_result, sizeof boot_log_reset_result);
@@ -2914,6 +2917,7 @@ static void writer(void *arg, wait_result_t result) {
   if (&boot_reset_probe) {
     reset_ok = boot_reset_probe(boot_log_reset_probe_text, sizeof boot_log_reset_probe_text) == 0;
     if (&boot_reset_pon) boot_reset_pon(boot_log_reset_pon, sizeof boot_log_reset_pon);
+    if (&boot_reset_ponlog) boot_reset_ponlog(boot_log_reset_ponlog, sizeof boot_log_reset_ponlog);
     PE_parse_boot_argn("autoreset", &autoreset, sizeof autoreset);
   }
   // diag=1 turns every diagnostic on: the kernel's rings and samplers (started from boot_diag_shot_tick), the scene screenshots and
