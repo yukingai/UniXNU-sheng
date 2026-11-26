@@ -112,6 +112,20 @@ jobs:
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/runtime/data.dbr
             device/drivers/Ath12kWifi/deps
             device/.cache/firmware
+      - name: Restore the 12 GB window options in the newer core's device tree generator (zus12873's local core had them)
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path('UniXNU/scripts/unixnu/devicetree.py'); s = p.read_text()
+          a = "        if not 0x10000000 <= size <= 0x200000000 or size % 0x200000:\n            raise Error('Owned memory must be 256 MiB to 8 GiB in 2 MiB steps')\n"
+          assert s.count(a) == 1, 'owned memory check not found'
+          s = s.replace(a, "        if not 0x10000000 <= size <= 0x240000000 or size % 0x200000:\n            raise Error('Owned memory must be 256 MiB to 9 GiB in 2 MiB steps')\n")
+          b = "        chosen.append(('darwinboot-memory-excluded', bytes(16 * slots)))\n"
+          assert s.count(b) == 1, 'excluded-range table not found'
+          s = s.replace(b, b + "    if options.get('owned_memory_floor') is not None:\n        floor = int(str(options['owned_memory_floor']), 0)\n        if not 0 < floor < 1 << 64 or floor % 0x200000 or not options.get('owned_memory_size') or not options.get('owned_memory_excluded_ranges'):\n            raise Error('Owned memory floor: a nonzero 2 MiB-aligned address with owned_memory_size and owned_memory_excluded_ranges')\n        chosen.append(('darwinboot-memory-floor', struct.pack('<Q', floor)))\n")
+          p.write_text(s)
+          print('9 GiB window and floor restored')
+          PY
       - name: Drop the cached Mesa tree (built for the older core's patch sequence)
         run: |
           rm -rf UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/.cache/mesa-work UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/build/mesa-tu-macos27
