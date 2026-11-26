@@ -112,6 +112,9 @@ jobs:
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/runtime/data.dbr
             device/drivers/Ath12kWifi/deps
             device/.cache/firmware
+      - name: Drop the cached Mesa tree (built for the older core's patch sequence)
+        run: |
+          rm -rf UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/.cache/mesa-work UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/tree/build/mesa-tu-macos27
       - name: Refresh pinned translator checkout
         run: |
           python3 - <<'PYTHON'
