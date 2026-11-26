@@ -55,7 +55,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: zus12873/UniXNU
-          ref: 2130c59a0335bc449a9a6760a15f9950ada0ddcb
+          ref: cf924b27d6d17e171800436251287d01948fb9c7
           path: UniXNU
           submodules: false
       - name: Check out core submodules (three of them from the zus12873 forks)
@@ -63,13 +63,15 @@ jobs:
         run: |
           set -e
           git submodule init
-          git config submodule.drivers/Adreno740.url https://github.com/zus12873/Adreno740.git
           git config submodule.drivers/AdrenoMetal.url https://github.com/zus12873/AdrenoMetal.git
           git config submodule.drivers/DarwinBoot.url https://github.com/zus12873/DarwinBoot.git
           git submodule update --recursive
-          # AdrenoMetal: the official tip (R2507 runtime, Shader Cache sleep and login-registration fixes, copied host buffer guards)
-          git -C drivers/AdrenoMetal fetch https://github.com/UniXNU/AdrenoMetal cc0a4e8e57d20f4a4698753c2530875f2b10c0ca
-          git -C drivers/AdrenoMetal checkout --detach cc0a4e8e57d20f4a4698753c2530875f2b10c0ca
+          # AdrenoMetal: zus12873 fix/iosurface-row-alignment (official main 2026-11-25: metal2vulkan fork, zero-copy host imports, YCbCr via compute; + 16-byte IOSurface rows)
+          git -C drivers/AdrenoMetal fetch https://github.com/zus12873/AdrenoMetal e0d8c3c90323e7f52f6464d585a1d4d401bbd300
+          git -C drivers/AdrenoMetal checkout --detach FETCH_HEAD
+          # DarwinBoot: zus12873 local/window-9g (the official pin 5243c68 plus the 9 GiB window, the 12 GB layout)
+          git -C drivers/DarwinBoot fetch https://github.com/zus12873/DarwinBoot bdb6ff7119780083ada9683cc34d54fbd3c8c9cb
+          git -C drivers/DarwinBoot checkout --detach bdb6ff7119780083ada9683cc34d54fbd3c8c9cb
           git submodule status
       - name: ArmCpu starts only the first armcpu-cpus=N cores (default all)
         run: |
