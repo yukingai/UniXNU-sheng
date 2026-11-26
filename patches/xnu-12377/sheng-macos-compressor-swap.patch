@@ -1,0 +1,45 @@
+The compressor swaps on a macOS userspace of the embedded (CONFIG_JETSAM) configuration.
+
+With CONFIG_JETSAM, compressor_needs_to_swap() drops the swap decision as soon as the compressor nears its limit and wakes the
+jetsam thread instead. Under macOS the killed daemons relaunch at once, the compressor never empties and the tablet stalls with
+VM_memorystatus and VM_compressor busy (sheng: 33 s of kernel CPU per 10 s, vm.compressor.swapper.swapouts_total 0). Apple's
+macOS kernel swaps there. On XNU_TARGET_OS_OSX the decision is kept while swap is active and not out of space; with swap
+exhausted the jetsam path below runs as before. iPadOS is not affected.
+
+diff --git a/osfmk/vm/vm_compressor.c b/osfmk/vm/vm_compressor.c
+index 729ee54..c8ff106 100644
+--- a/osfmk/vm/vm_compressor.c
++++ b/osfmk/vm/vm_compressor.c
+@@ -2896,6 +2896,22 @@ compressor_needs_to_swap()
+ 
+ check_if_low_space:
+ 
++#if CONFIG_JETSAM && XNU_TARGET_OS_OSX
++	/*
++	 * sheng: a macOS userspace on the embedded (CONFIG_JETSAM) configuration. Apple's macOS kernel
++	 * swaps when the compressor fills; the jetsam branch below instead drops the swap and kills,
++	 * and macOS daemons relaunch at once. While a swap file can still be had, swap.
++	 */
++	if (VM_CONFIG_SWAP_IS_ACTIVE && !vm_swap_out_of_space() &&
++	    (should_swap || vm_compressor_low_on_space())) {
++		should_swap = true;
++		if (vm_swap_low_on_space()) {
++			memorystatus_respond_to_swap_exhaustion();
++		}
++		goto sheng_swap_decided;
++	}
++#endif /* CONFIG_JETSAM && XNU_TARGET_OS_OSX */
++
+ #if CONFIG_JETSAM
+ 	if (compressor_is_thrashing || vm_compressor_low_on_space()) {
+ 		if (vm_compressor_thrashing_detected == FALSE) {
+@@ -2932,6 +2948,9 @@ check_if_low_space:
+ 		memorystatus_respond_to_swap_exhaustion();
+ 	}
+ #endif /* CONFIG_JETSAM */
++#if CONFIG_JETSAM && XNU_TARGET_OS_OSX
++sheng_swap_decided:
++#endif
+ 
+ 	if (should_swap == false) {
+ 		/*
