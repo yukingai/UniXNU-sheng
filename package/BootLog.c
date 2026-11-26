@@ -389,6 +389,7 @@ extern volatile uint32_t native_adreno_pool_views[5] __attribute__((weak_import)
 extern volatile uint32_t native_gpu_dcvs_reasons[9] __attribute__((weak_import));
 extern volatile uint32_t native_gpu_dcvs_windows[8] __attribute__((weak_import));
 extern volatile uint32_t native_cpufreq_ramp[9] __attribute__((weak_import));
+extern volatile uint32_t native_cpufreq_therm[8] __attribute__((weak_import));
 extern volatile uint32_t native_touch_doze[4] __attribute__((weak_import));
 extern volatile uint32_t native_touch_spi_wait[8] __attribute__((weak_import));
 extern volatile uint32_t native_cpufreq_gov[9] __attribute__((weak_import));
@@ -1651,6 +1652,12 @@ static size_t compose(char *out, size_t cap, uint32_t slot, unsigned now) {
         const volatile uint32_t *th = native_cpufreq_throttle;
         snprintf(row, sizeof row, "[cpu throttle] busy/throttled windows, lowest MHz: d0 %u/%u %u | d1 %u/%u %u | d2 %u/%u %u",
                  th[0], th[1], th[2], th[3], th[4], th[5], th[6], th[7], th[8]);
+        at = put(out, at, cap, row, sizeof row);
+      }
+      if (&native_cpufreq_therm && native_cpufreq_therm[2]) {
+        const volatile uint32_t *t = native_cpufreq_therm;
+        snprintf(row, sizeof row, "[cpu thermal] level=%u hottest=%u.%uC peak=%u.%uC ceiling=%uMHz changes=%u hot=%u/%u nodata=%u",
+                 t[0], t[1] / 10, t[1] % 10, t[4] / 10, t[4] % 10, t[2], t[3], t[5], t[6], t[7]);
         at = put(out, at, cap, row, sizeof row);
       }
       if (&native_cpufreq_ramp) {

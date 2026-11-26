@@ -38,6 +38,13 @@
 // limit costs. macOS runs 56 to 61, 10 s rows at 95 % busy or more: the mean vote was 98.8 to 100 % of the highest level in all 146,
 // while the hardware ran d1 under 80 % of its vote in 15 to 36 % of those windows (as low as 1171 MHz of 2803), d2 in 2 to 13 %
 // and d0 in none. The limit grows with the time all clusters stay loaded (run56 d1: 3 % of the windows at 50 s, 60 % at 200 s).
+// Mode 5 (zus-plus-thermal): mode 4 plus a temperature ceiling. The port has no OS thermal control (Android's thermal-engine is not
+// there), so a loaded SoC heats until the hardware's own last-resort limits act. Mode 5 turns on ThermalProbe.cpp (as thermal=1),
+// samples it every 16 windows (about 256 ms) and caps every domain by the hottest of the cpu0-2, cpu3-6, cpu7, cpuss and gpu sensors:
+// under `cpufreq-hot=<C>` (default 75) no thermal cap; from it, 2400 MHz; +5 C 2000; +10 C 1500; +15 C 1000. A level is left only
+// once the temperature is 5 C under the threshold that entered it. Until the first valid reading (or if the probe never maps) the
+// ceiling is 1500 MHz. `cpufreq-cap` still bounds everything. A domain over its ceiling drops at once, not after 4 windows.
+#include <stdint.h>
 #include <IOKit/IOService.h>
 #include <IOKit/IODeviceTreeSupport.h>
 #include <string.h>
@@ -69,6 +76,13 @@ struct native_cpufreq_rec *native_cpufreq_ring;
 volatile uint32_t native_cpufreq_count;
 extern volatile uint32_t native_adreno_method_stats[20][4] __attribute__((weak_import));
 extern volatile uint32_t native_hid_input_events[8] __attribute__((weak_import));
+// ThermalProbe.cpp: [0] stage; hottest sensor of each group, millidegrees (INT32_MIN: none).
+extern volatile uint32_t native_thermal_info[9] __attribute__((weak_import));
+extern volatile int32_t native_thermal_now[8] __attribute__((weak_import));
+void sheng_thermal_sample(void) __attribute__((weak_import));
+// Mode 5: [0] level 0-4, [1] hottest now (0.1 C), [2] ceiling MHz, [3] level changes, [4] hottest since boot (0.1 C),
+// [5] samples at level 1 or above, [6] samples, [7] samples without a valid reading
+volatile uint32_t native_cpufreq_therm[8];
 uint64_t sheng_cpu_idle_mach(int cpu);
 }
 static_assert(sizeof(native_cpufreq_rec) == 32, "cpufreq record");
@@ -228,6 +242,50 @@ void buildLevels(unsigned d) {
     l.count -= first;
 }
 
+// Mode 5's ceiling.
+constexpr uint32_t kThermCapMHz[5] = {0, 2400, 2000, 1500, 1000};
+unsigned gThermHotC = 75;
+unsigned gThermLevel = 3;
+bool gThermValid;
+
+// Highest level index of domain d at or under the thermal ceiling (0 if even the lowest is above it).
+unsigned thermCeil(const Levels &l) {
+    if (gMode < 5 || !l.count) return l.count ? l.count - 1 : 0;
+    const uint32_t capKHz = kThermCapMHz[gThermLevel] * 1000;
+    if (!capKHz) return l.count - 1;
+    unsigned at = 0;
+    for (unsigned i = 0; i < l.count; ++i) if (l.khz[i] <= capKHz) at = i;
+    return at;
+}
+
+void thermalStep() {
+    if (&sheng_thermal_sample) sheng_thermal_sample();
+    int32_t hot = INT32_MIN;
+    if (&native_thermal_now && &native_thermal_info && native_thermal_info[0] == 2)
+        for (unsigned g = 0; g < 5; ++g) {
+            const int32_t t = native_thermal_now[g];
+            if (t > -40000 && t < 150000 && t > hot) hot = t;   // a reading outside this is not a temperature
+        }
+    native_cpufreq_therm[6] = native_cpufreq_therm[6] + 1;
+    if (hot == INT32_MIN) {
+        native_cpufreq_therm[7] = native_cpufreq_therm[7] + 1;
+        if (!gThermValid) gThermLevel = 3;
+    } else {
+        const int32_t c10 = hot / 100;
+        if (!gThermValid) {gThermValid = true; gThermLevel = 0;}
+        unsigned level = gThermLevel;
+        // Up: as far as the temperature asks. Down: one level once 5 C under the threshold that entered the current one.
+        while (level < 4 && hot >= (int32_t)(gThermHotC + 5 * level) * 1000) ++level;
+        if (level == gThermLevel && level > 0 && hot < (int32_t)(gThermHotC + 5 * (level - 1) - 5) * 1000) --level;
+        if (level != gThermLevel) {gThermLevel = level; native_cpufreq_therm[3] = native_cpufreq_therm[3] + 1;}
+        native_cpufreq_therm[1] = (uint32_t)(c10 < 0 ? 0 : c10);
+        if ((uint32_t)c10 > native_cpufreq_therm[4] && c10 > 0) native_cpufreq_therm[4] = (uint32_t)c10;
+    }
+    if (gThermLevel) native_cpufreq_therm[5] = native_cpufreq_therm[5] + 1;
+    native_cpufreq_therm[0] = gThermLevel;
+    native_cpufreq_therm[2] = kThermCapMHz[gThermLevel] ? kThermCapMHz[gThermLevel] : (gCapKHz ? gCapKHz / 1000 : 9999);
+}
+
 void setLevel(unsigned d, unsigned at) {
     Window &w = gDomain[d];
     const uint32_t level = gLevels[d].index[at];
@@ -254,8 +312,11 @@ void governorThread(void *, wait_result_t) {
     uint32_t changes[3] = {};
     uint32_t full[3] = {}, late[3] = {};
     uint64_t fullVote[3] = {}, fullState[3] = {};   // sums of MHz over the windows counted in full
+    unsigned thermTick = 0;
+    if (gMode >= 5) thermalStep();
     for (;;) {
         IOSleep(16);
+        if (gMode >= 5 && ++thermTick >= 16) {thermTick = 0; thermalStep();}
         const uint64_t t = mach_absolute_time(), dt = t - lastT;
         lastT = t;
         if (!dt) continue;
@@ -299,7 +360,7 @@ void governorThread(void *, wait_result_t) {
                 buildLevels(d);
                 if (!l.count) continue;
                 w.preKHz = (rd32(w.va, kRegDomainState) & 0xff) * kXoKHz;
-                cur[d] = l.count - 1;
+                cur[d] = thermCeil(l);
                 setLevel(d, cur[d]);
                 ready[d] = true;
             }
@@ -332,7 +393,11 @@ void governorThread(void *, wait_result_t) {
                 else if (quiet[d] < 12)
                     while (want + 1 < l.count && l.khz[want] * 2 < l.khz[l.count - 1]) ++want;
             }
-            if (want > cur[d]) {
+            const unsigned lim = thermCeil(l);
+            if (want > lim) want = lim;
+            if (cur[d] > lim) {
+                cur[d] = lim; down[d] = 0; setLevel(d, lim); ++changes[d];
+            } else if (want > cur[d]) {
                 cur[d] = want; down[d] = 0; setLevel(d, want); ++changes[d];
             } else if (want < cur[d]) {
                 if (++down[d] >= 4) {cur[d] = want; down[d] = 0; setLevel(d, want); ++changes[d];}
@@ -390,6 +455,9 @@ extern "C" void sheng_cpufreq_probe(void) {
     PE_parse_boot_argn("cpufreq-frame-ms", &frameMs, sizeof(frameMs));
     gBoostMs = boostMs;
     PE_parse_boot_argn("cpufreq-frame-pct", &framePct, sizeof(framePct));
+    unsigned hotC = 75;
+    PE_parse_boot_argn("cpufreq-hot", &hotC, sizeof(hotC));
+    gThermHotC = hotC < 50 ? 50 : hotC > 90 ? 90 : hotC;
     gFrameMs = frameMs;
     gFramePct = framePct > 100 ? 100 : framePct;
     gFloorKHz = minMHz * 1000;

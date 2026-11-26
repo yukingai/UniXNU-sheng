@@ -196,6 +196,7 @@ extern "C" void sheng_thermal_probe(void) {
     unsigned mode = 0, periodMs = 0;
     PE_parse_boot_argn("thermal", &mode, sizeof(mode));
     PE_parse_boot_argn("thermal-ms", &periodMs, sizeof(periodMs));
+    if (!mode) {unsigned cpufreq = 0; PE_parse_boot_argn("cpufreq", &cpufreq, sizeof(cpufreq)); if (cpufreq >= 5) mode = 1;}   // mode 5's ceiling
     if (!mode || gReady || native_thermal_info[0]) return;
     native_thermal_info[2] = (mode & 0xff) | periodMs << 8;
     for (unsigned c = 0; c < THERMAL_CONTROLLERS; ++c) {
