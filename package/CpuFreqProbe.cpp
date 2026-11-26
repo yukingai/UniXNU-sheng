@@ -41,7 +41,7 @@
 // Mode 5 (zus-plus-thermal): mode 4 plus a temperature ceiling. The port has no OS thermal control (Android's thermal-engine is not
 // there), so a loaded SoC heats until the hardware's own last-resort limits act. Mode 5 turns on ThermalProbe.cpp (as thermal=1),
 // samples it every 16 windows (about 256 ms) and caps every domain by the hottest of the cpu0-2, cpu3-6, cpu7, cpuss and gpu sensors:
-// under `cpufreq-hot=<C>` (default 75) no thermal cap; from it, 2400 MHz; +5 C 2000; +10 C 1500; +15 C 1000. A level is left only
+// under `cpufreq-hot=<C>` (default 65) no thermal cap; from it, 2400 MHz; +5 C 2000; +10 C 1500; +15 C 1000. A level is left only
 // once the temperature is 5 C under the threshold that entered it. Until the first valid reading (or if the probe never maps) the
 // ceiling is 1500 MHz. `cpufreq-cap` still bounds everything. A domain over its ceiling drops at once, not after 4 windows.
 #include <stdint.h>
@@ -244,7 +244,7 @@ void buildLevels(unsigned d) {
 
 // Mode 5's ceiling.
 constexpr uint32_t kThermCapMHz[5] = {0, 2400, 2000, 1500, 1000};
-unsigned gThermHotC = 75;
+unsigned gThermHotC = 65;
 unsigned gThermLevel = 3;
 bool gThermValid;
 
@@ -455,7 +455,7 @@ extern "C" void sheng_cpufreq_probe(void) {
     PE_parse_boot_argn("cpufreq-frame-ms", &frameMs, sizeof(frameMs));
     gBoostMs = boostMs;
     PE_parse_boot_argn("cpufreq-frame-pct", &framePct, sizeof(framePct));
-    unsigned hotC = 75;
+    unsigned hotC = 65;
     PE_parse_boot_argn("cpufreq-hot", &hotC, sizeof(hotC));
     gThermHotC = hotC < 50 ? 50 : hotC > 90 ? 90 : hotC;
     gFrameMs = frameMs;

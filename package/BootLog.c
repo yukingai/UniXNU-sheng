@@ -2724,6 +2724,7 @@ static const char *const log_group_arg[LogGroups] = {"log-gpu", "log-display", "
 static uint32_t log_group_on;
 // Tag prefixes by group, the first match wins ("gpu dcvs" before "gpu"); a tag in no list is a system row.
 static const struct {const char *prefix; uint8_t group;} log_tags[] = {
+  {"thermal", LogSys}, {"cpu thermal", LogSys},   // the temperatures and the thermal ceiling are always kept
   {"gpu dcvs", LogPower}, {"gpu", LogGpu}, {"ring", LogGpu}, {"ib]", LogGpu}, {"fence", LogGpu}, {"metal", LogGpu}, {"mfb", LogGpu},
   {"bo ", LogGpu}, {"maint", LogGpu}, {"submit us", LogGpu}, {"vm ", LogGpu}, {"import", LogGpu}, {"walk", LogGpu}, {"coherence", LogGpu},
   {"display", LogDisplay}, {"direct scanout", LogDisplay}, {"scanout", LogDisplay}, {"dpu", LogDisplay}, {"swap", LogDisplay},
