@@ -282,16 +282,11 @@ ramdisk_max_bytes = 199229440
 ["os_overrides"."macos-27.3-26C5035r"."payload"."adt"]
 # T6050, the chip of Mac17,11.
 "chip_id" = "6050"
-# 12 GiB unit only (local branch): bank 1 is 0x880000000..0xB00000000 there, and the window is its largest free run,
-# 0x8C0000000..0xB00000000, 9 GiB. That is the most the generator and DarwinBoot accept, and the most the 22 pages of
-# 4 KiB bootstrap tables map wherever the window and the kernel's virtual base fall (native-4k-bootstrap-capacity.patch).
-# The compressor's pool is pinned (vm_compression_limit above), so the kernel address space it reserves does not grow
-# with the window. The floor is the start of that run: DarwinBoot starts the window no lower. DarwinBoot lists the
-# memory the firmware keeps inside the window in a table of this many ranges, and this kernel leaves them out
-# (window-memory-excluded-ranges.patch). Other profiles keep the single run: their kernels do not read the table.
-"owned_memory_size" = "0x240000000"
+# Official core and DarwinBoot (2026-11-26): their window check stops at 8 GiB and they have no floor, so the 12 GiB
+# unit takes an 8 GiB window inside bank 1's largest free run (0x8C0000000..0xB00000000, 9 GiB). The outside-memory
+# settings below are zus12873's for this unit: bank 1 stays out of adoption (it froze or flickered here), the low bank is adopted.
+"owned_memory_size" = "0x200000000"
 "owned_memory_excluded_ranges" = 64
-"owned_memory_floor" = "0x8C0000000"
 # DarwinBoot records where the payload RAM disk and the entry's initrd buffer lie in the firmware's memory map
 # (sysctl kern.boot_payload_memory).
 "loader_inputs" = true
